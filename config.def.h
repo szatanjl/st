@@ -8,6 +8,15 @@
 static char *font = "Liberation Mono:pixelsize=12:antialias=true:autohint=true";
 static int borderpx = 2;
 
+/* enable/disable text decorations */
+static const int text_bold = 1;
+static const int text_bright = 1;
+static const int text_faint = 1;
+static const int text_italic = 1;
+static const int text_underline = 1;
+static const int text_blink = 1;
+static const int text_struck = 1;
+
 /*
  * What program is execed by st depends of these precedence rules:
  * 1: program passed with -e

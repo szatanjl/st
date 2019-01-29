@@ -1238,13 +1238,14 @@ xmakeglyphfontspecs(XftGlyphFontSpec *specs, const Glyph *glyphs, int len, int x
 			font = &dc.font;
 			frcflags = FRC_NORMAL;
 			runewidth = win.cw * ((mode & ATTR_WIDE) ? 2.0f : 1.0f);
-			if ((mode & ATTR_ITALIC) && (mode & ATTR_BOLD)) {
+			if (text_italic && text_bold &&
+			    (mode & ATTR_ITALIC) && (mode & ATTR_BOLD)) {
 				font = &dc.ibfont;
 				frcflags = FRC_ITALICBOLD;
-			} else if (mode & ATTR_ITALIC) {
+			} else if (text_italic && (mode & ATTR_ITALIC)) {
 				font = &dc.ifont;
 				frcflags = FRC_ITALIC;
-			} else if (mode & ATTR_BOLD) {
+			} else if (text_bold && (mode & ATTR_BOLD)) {
 				font = &dc.bfont;
 				frcflags = FRC_BOLD;
 			}
@@ -1381,7 +1382,7 @@ xdrawglyphfontspecs(const XftGlyphFontSpec *specs, Glyph base, int len, int x, i
 	}
 
 	/* Change basic system colors [0-7] to bright system colors [8-15] */
-	if ((base.mode & ATTR_BOLD_FAINT) == ATTR_BOLD && BETWEEN(base.fg, 0, 7))
+	if (text_bright && (base.mode & ATTR_BOLD_FAINT) == ATTR_BOLD && BETWEEN(base.fg, 0, 7))
 		fg = &dc.col[base.fg + 8];
 
 	if (IS_SET(MODE_REVERSE)) {
@@ -1410,7 +1411,7 @@ xdrawglyphfontspecs(const XftGlyphFontSpec *specs, Glyph base, int len, int x, i
 		}
 	}
 
-	if ((base.mode & ATTR_BOLD_FAINT) == ATTR_FAINT) {
+	if (text_faint && (base.mode & ATTR_BOLD_FAINT) == ATTR_FAINT) {
 		colfg.red = fg->color.red / 2;
 		colfg.green = fg->color.green / 2;
 		colfg.blue = fg->color.blue / 2;
@@ -1425,7 +1426,7 @@ xdrawglyphfontspecs(const XftGlyphFontSpec *specs, Glyph base, int len, int x, i
 		bg = temp;
 	}
 
-	if (base.mode & ATTR_BLINK && win.mode & MODE_BLINK)
+	if (text_blink && (base.mode & ATTR_BLINK) && (win.mode & MODE_BLINK))
 		fg = bg;
 
 	if (base.mode & ATTR_INVISIBLE)
@@ -1460,12 +1461,12 @@ xdrawglyphfontspecs(const XftGlyphFontSpec *specs, Glyph base, int len, int x, i
 	XftDrawGlyphFontSpec(xw.draw, fg, specs, len);
 
 	/* Render underline and strikethrough. */
-	if (base.mode & ATTR_UNDERLINE) {
+	if (text_underline && (base.mode & ATTR_UNDERLINE)) {
 		XftDrawRect(xw.draw, fg, winx, winy + dc.font.ascent + 1,
 				width, 1);
 	}
 
-	if (base.mode & ATTR_STRUCK) {
+	if (text_struck && (base.mode & ATTR_STRUCK)) {
 		XftDrawRect(xw.draw, fg, winx, winy + 2 * dc.font.ascent / 3,
 				width, 1);
 	}
