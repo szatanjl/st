@@ -85,6 +85,9 @@ void printscreen(const Arg *);
 void printsel(const Arg *);
 void sendbreak(const Arg *);
 void toggleprinter(const Arg *);
+void hist_debug(const Arg *);
+void hscrollup(const Arg *);
+void hscrolldown(const Arg *);
 
 int tattrset(int);
 void tnew(int, int);
@@ -118,6 +121,7 @@ extern char *stty_args;
 extern char *vtiden;
 extern wchar_t *worddelimiters;
 extern int allowaltscreen;
+extern unsigned int histsize;
 extern char *termname;
 extern unsigned int tabspaces;
 extern unsigned int defaultfg;

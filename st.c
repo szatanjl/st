@@ -115,6 +115,7 @@ typedef struct {
 typedef struct {
 	int row;      /* nb row */
 	int col;      /* nb col */
+	Line *view;   /* drawn screen */
 	Line *line;   /* screen */
 	Line *alt;    /* alternate screen */
 	int *dirty;   /* dirtyness of lines */
@@ -130,6 +131,14 @@ typedef struct {
 	int icharset; /* selected charset for sequence */
 	int *tabs;
 } Term;
+
+typedef struct {
+	Line *line;
+	unsigned int *len;
+	unsigned int size;
+	unsigned int i;
+	unsigned int ci, cj;
+} History;
 
 /* CSI Escape sequence structs */
 /* ESC '[' [[ [<priv>] <arg> [;]] <mode> [<mode>]] */
@@ -185,7 +194,7 @@ static void tnewline(int);
 static void tputtab(int);
 static void tputc(Rune);
 static void treset(void);
-static void tscrollup(int, int);
+static void tscrollup(int, int, int);
 static void tscrolldown(int, int);
 static void tsetattr(int *, int);
 static void tsetchar(Rune, Glyph *, int, int);
@@ -218,8 +227,12 @@ static char base64dec_getc(const char **);
 
 static ssize_t xwrite(int, const char *, size_t);
 
+static void hist_push(void);
+static void hist_view(void);
+
 /* Globals */
 static Term term;
+static History hist;
 static Selection sel;
 static CSIEscape csiescseq;
 static STREscape strescseq;
@@ -1081,12 +1094,16 @@ tscrolldown(int orig, int n)
 }
 
 void
-tscrollup(int orig, int n)
+tscrollup(int orig, int n, int hist)
 {
 	int i;
 	Line temp;
 
 	LIMIT(n, 0, term.bot-orig+1);
+
+	if (hist && orig == 0 && n == 1) {
+		hist_push();
+	}
 
 	tclearregion(0, orig, term.col-1, orig+n-1);
 	tsetdirt(orig+n, term.bot);
@@ -1121,12 +1138,144 @@ selscroll(int orig, int n)
 }
 
 void
+hist_debug(const Arg *arg)
+{
+	printf("--- DEBUG ---\n");
+	printf("index: %d, size: %d\n", hist.i, hist.size);
+	printf("ci: %d, cj: %d\n", hist.ci, hist.cj);
+	for (int i = 0; i < hist.size; i++) {
+		printf("%c", (i == hist.i) ? '-' : ' ');
+		printf("%c", (i == hist.ci) ? '+' : ' ');
+		printf("%4d: ", hist.len[i]);
+		if (hist.line[i] != NULL) {
+			for (int j = 0; j < hist.len[i]; j++) {
+				printf("%c", (char)(hist.line[i][j].u));
+			}
+		} else {
+			printf("NULL");
+		}
+		printf("\n");
+	}
+}
+
+void
+hist_push(void)
+{
+	Line line = term.line[0];
+	int len = MAX(tlinelen(0), 1);
+	unsigned int size, i;
+
+	/* allocate memory for more history lines */
+	if (hist.i + 1 >= hist.size) {
+		size = MIN(MAX(hist.size, 1) * 2, histsize);
+		if (size > hist.size) {
+			hist.line = xrealloc(hist.line, size * sizeof(Line));
+			hist.len = xrealloc(hist.len, size * sizeof(int));
+			for (i = hist.size; i < size; i++) {
+				hist.line[i] = NULL;
+				hist.len[i] = 0;
+			}
+			hist.size = size;
+		}
+	}
+
+	if (hist.size <= 0)
+		return;
+
+	/* allocate memory for line (round to power of 2 to avoid
+	 * reallocating for single characters) */
+	for (size = 1; size < hist.len[hist.i] + len; size *= 2);
+	hist.line[hist.i] = xrealloc(hist.line[hist.i], size * sizeof(Glyph));
+
+	/* move history cursor if set to end or beggining of history */
+	i = (hist.i + 1) % hist.size;
+	if (hist.len[hist.i] <= 0 && (hist.ci == hist.i || hist.ci == i)) {
+		hist.ci = (hist.ci + 1) % hist.size;
+		hist.cj = 0;
+	}
+
+	/* push text */
+	memcpy(hist.line[hist.i] + hist.len[hist.i], line, len * sizeof(Glyph));
+	hist.len[hist.i] += len;
+
+	/* move hist.i if EOL */
+	if (!(hist.line[hist.i][hist.len[hist.i] - 1].mode & ATTR_WRAP))
+		hist.i = i;
+
+	/* set guard to indicate end of history */
+	hist.len[i] = 0;
+}
+
+void
+hist_view(void)
+{
+	Glyph cg = { ' ', 0, term.c.attr.fg, term.c.attr.bg };
+	unsigned int ci = hist.ci, cj = hist.cj / term.col * term.col;
+	unsigned int i, j;
+
+	/* map history to view */
+	for (i = 0; i < term.row && hist.size > 0 && hist.len[ci] > 0; i++) {
+		for (j = 0; j < term.col; j++) {
+			if (cj < hist.len[ci])
+				term.view[i][j] = hist.line[ci][cj++];
+			else
+				term.view[i][j] = cg;
+		}
+
+		if (cj >= hist.len[ci]) {
+			ci = (ci + 1) % hist.size;
+			cj = 0;
+		} else {
+			term.view[i][term.col - 1].mode |= ATTR_WRAP;
+		}
+	}
+
+	/* no more history, fill rest of view with term.line */
+	ci = i;
+	for (; i < term.row; i++)
+		for (j = 0; j < term.col; j++)
+			term.view[i][j] = term.line[i - ci][j];
+}
+
+void
+hscrollup(const Arg *arg)
+{
+	unsigned int i = ((hist.ci > 0) ? hist.ci : hist.size) - 1;
+
+	if (hist.size <= 0)
+		return;
+
+	if (hist.cj > term.col) {
+		hist.cj -= term.col;
+	} else if (hist.len[i] > 0) {
+		hist.ci = i;
+		hist.cj = hist.len[hist.ci] - 1;
+	} else {
+		hist.cj = 0;
+	}
+}
+
+void
+hscrolldown(const Arg *arg)
+{
+	if (hist.size <= 0)
+		return;
+
+	if (hist.cj + term.col < hist.len[hist.ci]) {
+		hist.cj += term.col;
+	} else if (hist.len[hist.ci] > 0) {
+		hist.ci = (hist.ci + 1) % hist.size;
+		hist.cj = 0;
+	}
+}
+
+void
 tnewline(int first_col)
 {
 	int y = term.c.y;
 
 	if (y == term.bot) {
-		tscrollup(term.top, 1);
+		tscrollup(term.top, 1, term.top == 0);
 	} else {
 		y++;
 	}
@@ -1298,7 +1447,7 @@ void
 tdeleteline(int n)
 {
 	if (BETWEEN(term.c.y, term.top, term.bot))
-		tscrollup(term.c.y, n);
+		tscrollup(term.c.y, n, 0);
 }
 
 int32_t
@@ -1729,7 +1878,7 @@ csihandle(void)
 		break;
 	case 'S': /* SU -- Scroll <n> line up */
 		DEFAULT(csiescseq.arg[0], 1);
-		tscrollup(term.top, csiescseq.arg[0]);
+		tscrollup(term.top, csiescseq.arg[0], 0);
 		break;
 	case 'T': /* SD -- Scroll <n> line down */
 		DEFAULT(csiescseq.arg[0], 1);
@@ -2240,7 +2389,7 @@ eschandle(uchar ascii)
 		return 0;
 	case 'D': /* IND -- Linefeed */
 		if (term.c.y == term.bot) {
-			tscrollup(term.top, 1);
+			tscrollup(term.top, 1, term.top == 0);
 		} else {
 			tmoveto(term.c.x, term.c.y+1);
 		}
@@ -2490,20 +2639,24 @@ tresize(int col, int row)
 	 * memmove because we're freeing the earlier lines
 	 */
 	for (i = 0; i <= term.c.y - row; i++) {
+		free(term.view[i]);
 		free(term.line[i]);
 		free(term.alt[i]);
 	}
 	/* ensure that both src and dst are not NULL */
 	if (i > 0) {
+		memmove(term.view, term.view + i, row * sizeof(Line));
 		memmove(term.line, term.line + i, row * sizeof(Line));
 		memmove(term.alt, term.alt + i, row * sizeof(Line));
 	}
 	for (i += row; i < term.row; i++) {
+		free(term.view[i]);
 		free(term.line[i]);
 		free(term.alt[i]);
 	}
 
 	/* resize to new height */
+	term.view = xrealloc(term.view, row * sizeof(Line));
 	term.line = xrealloc(term.line, row * sizeof(Line));
 	term.alt  = xrealloc(term.alt,  row * sizeof(Line));
 	term.dirty = xrealloc(term.dirty, row * sizeof(*term.dirty));
@@ -2511,12 +2664,14 @@ tresize(int col, int row)
 
 	/* resize each row to new width, zero-pad if needed */
 	for (i = 0; i < minrow; i++) {
+		term.view[i] = xrealloc(term.view[i], col * sizeof(Glyph));
 		term.line[i] = xrealloc(term.line[i], col * sizeof(Glyph));
 		term.alt[i]  = xrealloc(term.alt[i],  col * sizeof(Glyph));
 	}
 
 	/* allocate any new rows */
 	for (/* i = minrow */; i < row; i++) {
+		term.view[i] = xmalloc(col * sizeof(Glyph));
 		term.line[i] = xmalloc(col * sizeof(Glyph));
 		term.alt[i] = xmalloc(col * sizeof(Glyph));
 	}
@@ -2563,11 +2718,11 @@ drawregion(int x1, int y1, int x2, int y2)
 	int y;
 
 	for (y = y1; y < y2; y++) {
-		if (!term.dirty[y])
-			continue;
+//		if (!term.dirty[y])
+//			continue;
 
-		term.dirty[y] = 0;
-		xdrawline(term.line[y], x1, y, x2);
+//		term.dirty[y] = 0;
+		xdrawline(term.view[y], x1, y, x2);
 	}
 }
 
@@ -2587,6 +2742,7 @@ draw(void)
 	if (term.line[term.c.y][cx].mode & ATTR_WDUMMY)
 		cx--;
 
+	hist_view();
 	drawregion(0, 0, term.col, term.row);
 	xdrawcursor(cx, term.c.y, term.line[term.c.y][cx],
 			term.ocx, term.ocy, term.line[term.ocy][term.ocx]);

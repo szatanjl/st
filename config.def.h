@@ -44,6 +44,12 @@ static unsigned int tripleclicktimeout = 600;
 int allowaltscreen = 1;
 
 /*
+ * Max number of lines to store in scrollback history
+ * 0 means disable history, -1 means infinite history
+ */
+unsigned int histsize = -1;
+
+/*
  * draw latency range in ms - from new content/keypress/etc until drawing.
  * within this range, st draws when content stops arriving (idle). mostly it's
  * near minlatency, but it waits longer for slow updates to avoid partial draw.
@@ -193,6 +199,9 @@ static Shortcut shortcuts[] = {
 	{ TERMMOD,              XK_Y,           selpaste,       {.i =  0} },
 	{ ShiftMask,            XK_Insert,      selpaste,       {.i =  0} },
 	{ TERMMOD,              XK_Num_Lock,    numlock,        {.i =  0} },
+	{ TERMMOD,              XK_T,           hist_debug,     {.i =  0} },
+	{ TERMMOD,              XK_U,           hscrollup,      {.i =  0} },
+	{ TERMMOD,              XK_D,           hscrolldown,    {.i =  0} },
 };
 
 /*
