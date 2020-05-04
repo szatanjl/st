@@ -1171,6 +1171,9 @@ hist_push(void)
 	int len = MAX(tlinelen(0), 1);
 	unsigned int size, i;
 
+	if (IS_SET(MODE_ALTSCREEN))
+		return;
+
 	/* allocate memory for more history lines */
 	if (hist.i + 1 >= hist.size) {
 		size = MIN(MAX(hist.size, 1) * 2, histsize);
@@ -1220,7 +1223,8 @@ hist_view(unsigned int *lines)
 	unsigned int i, j;
 
 	/* map history to view */
-	for (i = 0; i < term.row && hist.size > 0 && hist.len[ci] > 0; i++) {
+	for (i = 0; i < term.row && !IS_SET(MODE_ALTSCREEN) &&
+	            hist.size > 0 && hist.len[ci] > 0; i++) {
 		for (j = 0; j < term.col; j++) {
 			if (cj < hist.len[ci])
 				term.view[i][j] = hist.line[ci][cj++];
@@ -1251,7 +1255,7 @@ hscrollup(const Arg *arg)
 {
 	unsigned int i = ((hist.ci > 0) ? hist.ci : hist.size) - 1;
 
-	if (hist.size <= 0)
+	if (hist.size <= 0 || IS_SET(MODE_ALTSCREEN))
 		return;
 
 	if (hist.cj > term.col) {
@@ -1267,7 +1271,7 @@ hscrollup(const Arg *arg)
 void
 hscrolldown(const Arg *arg)
 {
-	if (hist.size <= 0)
+	if (hist.size <= 0 || IS_SET(MODE_ALTSCREEN))
 		return;
 
 	if (hist.cj + term.col < hist.len[hist.ci]) {
@@ -1281,7 +1285,7 @@ hscrolldown(const Arg *arg)
 void
 hscrollbottom(const Arg *arg)
 {
-	if (hist.size <= 0)
+	if (hist.size <= 0 || IS_SET(MODE_ALTSCREEN))
 		return;
 
 	hist.ci = hist.i + (hist.len[hist.i] > 0);
