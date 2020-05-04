@@ -1812,6 +1812,9 @@ kpress(XEvent *ev)
 		}
 	}
 
+	if (scroll_on_input)
+		hscrollbottom(NULL);
+
 	/* 2. custom keys from config.h */
 	if ((customkey = kmap(ksym, e->state))) {
 		ttywrite(customkey, strlen(customkey), 1);
@@ -1913,8 +1916,11 @@ run(void)
 		}
 		clock_gettime(CLOCK_MONOTONIC, &now);
 
-		if (FD_ISSET(ttyfd, &rfd))
+		if (FD_ISSET(ttyfd, &rfd)) {
+			if (scroll_on_output)
+				hscrollbottom(NULL);
 			ttyread();
+		}
 
 		xev = 0;
 		while (XPending(xw.dpy)) {

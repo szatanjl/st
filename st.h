@@ -88,6 +88,7 @@ void toggleprinter(const Arg *);
 void hist_debug(const Arg *);
 void hscrollup(const Arg *);
 void hscrolldown(const Arg *);
+void hscrollbottom(const Arg *);
 
 int tattrset(int);
 void tnew(int, int);

@@ -48,6 +48,8 @@ int allowaltscreen = 1;
  * 0 means disable history, -1 means infinite history
  */
 unsigned int histsize = -1;
+static int scroll_on_input  = 1; /* scroll to the bottom on keypress */
+static int scroll_on_output = 0; /* scroll to the bottom on output */
 
 /*
  * draw latency range in ms - from new content/keypress/etc until drawing.

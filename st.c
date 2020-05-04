@@ -1279,6 +1279,16 @@ hscrolldown(const Arg *arg)
 }
 
 void
+hscrollbottom(const Arg *arg)
+{
+	if (hist.size <= 0)
+		return;
+
+	hist.ci = hist.i + (hist.len[hist.i] > 0);
+	hist.cj = 0;
+}
+
+void
 tnewline(int first_col)
 {
 	int y = term.c.y;
