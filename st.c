@@ -1052,6 +1052,12 @@ treset(void)
 		tclearregion(0, 0, term.col-1, term.row-1);
 		tswapscreen();
 	}
+
+	for (i = 0; i < hist.size; i++)
+		free(hist.line[i]);
+	free(hist.line);
+	free(hist.len);
+	hist = (History){ 0 };
 }
 
 void
