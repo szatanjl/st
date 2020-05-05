@@ -228,7 +228,7 @@ static char base64dec_getc(const char **);
 static ssize_t xwrite(int, const char *, size_t);
 
 static void hist_push(void);
-static void hist_view(void);
+static void hist_view(unsigned int *);
 
 /* Globals */
 static Term term;
@@ -1213,7 +1213,7 @@ hist_push(void)
 }
 
 void
-hist_view(void)
+hist_view(unsigned int *lines)
 {
 	Glyph cg = { ' ', 0, term.c.attr.fg, term.c.attr.bg };
 	unsigned int ci = hist.ci, cj = hist.cj / term.col * term.col;
@@ -1241,6 +1241,9 @@ hist_view(void)
 	for (; i < term.row; i++)
 		for (j = 0; j < term.col; j++)
 			term.view[i][j] = term.line[i - ci][j];
+
+	if (lines != NULL)
+		*lines = ci;
 }
 
 void
@@ -2736,6 +2739,7 @@ void
 draw(void)
 {
 	int cx = term.c.x, ocx = term.ocx, ocy = term.ocy;
+	unsigned int lines = 0;
 
 	if (!xstartdraw())
 		return;
@@ -2748,10 +2752,10 @@ draw(void)
 	if (term.line[term.c.y][cx].mode & ATTR_WDUMMY)
 		cx--;
 
-	hist_view();
+	hist_view(&lines);
 	drawregion(0, 0, term.col, term.row);
-	xdrawcursor(cx, term.c.y, term.line[term.c.y][cx],
-			term.ocx, term.ocy, term.line[term.ocy][term.ocx]);
+	xdrawcursor(cx, term.c.y + lines, term.line[term.c.y][cx],
+			term.ocx, term.ocy + lines, term.line[term.ocy][term.ocx]);
 	term.ocx = cx;
 	term.ocy = term.c.y;
 	xfinishdraw();
