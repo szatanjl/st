@@ -85,6 +85,7 @@ void printscreen(const Arg *);
 void printsel(const Arg *);
 void sendbreak(const Arg *);
 void toggleprinter(const Arg *);
+void sel_debug(const Arg *arg);
 void hist_debug(const Arg *);
 void hscrollup(const Arg *);
 void hscrolldown(const Arg *);
@@ -106,7 +107,7 @@ void selclear(void);
 void selinit(void);
 void selstart(int, int, int);
 void selextend(int, int, int, int);
-int selected(int, int);
+int selected(int, int, int);
 char *getsel(void);
 
 size_t utf8encode(Rune, char *);

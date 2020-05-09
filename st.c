@@ -106,6 +106,7 @@ typedef struct {
 	 */
 	struct {
 		int x, y;
+		unsigned int hi, hj;
 	} nb, ne, ob, oe;
 
 	int alt;
@@ -214,7 +215,7 @@ static void tstrsequence(uchar);
 static void drawregion(int, int, int, int);
 
 static void selnormalize(void);
-static void selscroll(int, int);
+static void selscroll(int, int, int);
 static void selsnap(int *, int *, int);
 
 static size_t utf8decode(const char *, Rune *, size_t);
@@ -227,6 +228,7 @@ static char base64dec_getc(const char **);
 
 static ssize_t xwrite(int, const char *, size_t);
 
+static void mapview(unsigned int *, unsigned int *, int *, int *);
 static void hist_push(void);
 static void hist_view(unsigned int *);
 
@@ -438,6 +440,34 @@ tlinelen(int y)
 }
 
 void
+mapview(unsigned int *hi, unsigned int *hj, int *x, int *y)
+{
+	unsigned int ci = hist.ci, cj = hist.cj / term.col * term.col;
+	unsigned int i, j;
+
+	if (hist.size <= 0)
+		return;
+
+	for (i = 0; i < term.row && hist.len[ci] > 0; i++) {
+		for (j = 0; j < term.col; j++) {
+			if (i == *y && j == *x) {
+				*hi = ci;
+				*hj = MIN(cj, hist.len[ci]);
+				*y = -1;
+				return;
+			}
+			cj++;
+		}
+		if (cj >= hist.len[ci]) {
+			ci = (ci + 1) % hist.size;
+			cj = 0;
+		}
+	}
+
+	*y -= i;
+}
+
+void
 selstart(int col, int row, int snap)
 {
 	selclear();
@@ -447,6 +477,8 @@ selstart(int col, int row, int snap)
 	sel.snap = snap;
 	sel.oe.x = sel.ob.x = col;
 	sel.oe.y = sel.ob.y = row;
+	mapview(&sel.ob.hi, &sel.ob.hj, &sel.ob.x, &sel.ob.y);
+	mapview(&sel.oe.hi, &sel.oe.hj, &sel.oe.x, &sel.oe.y);
 	selnormalize();
 
 	if (sel.snap != 0)
@@ -474,6 +506,7 @@ selextend(int col, int row, int type, int done)
 
 	sel.oe.x = col;
 	sel.oe.y = row;
+	mapview(&sel.oe.hi, &sel.oe.hj, &sel.oe.x, &sel.oe.y);
 	selnormalize();
 	sel.type = type;
 
@@ -488,6 +521,20 @@ selnormalize(void)
 {
 	int i;
 
+	sel.ob.y = (sel.ob.y < 0) ? -1 : sel.ob.y;
+	sel.oe.y = (sel.oe.y < 0) ? -1 : sel.oe.y;
+
+	/* TODO: hist rotation breaks this hi,hj check */
+	if (sel.ob.y < sel.oe.y ||
+	    (sel.ob.y == sel.oe.y && (sel.ob.hi < sel.oe.hi ||
+	    (sel.ob.hi == sel.oe.hi && sel.ob.hj < sel.oe.hj)))) {
+		sel.nb = sel.ob;
+		sel.ne = sel.oe;
+	} else {
+		sel.nb = sel.oe;
+		sel.ne = sel.ob;
+	}
+
 	if (sel.type == SEL_REGULAR && sel.ob.y != sel.oe.y) {
 		sel.nb.x = sel.ob.y < sel.oe.y ? sel.ob.x : sel.oe.x;
 		sel.ne.x = sel.ob.y < sel.oe.y ? sel.oe.x : sel.ob.x;
@@ -498,25 +545,42 @@ selnormalize(void)
 	sel.nb.y = MIN(sel.ob.y, sel.oe.y);
 	sel.ne.y = MAX(sel.ob.y, sel.oe.y);
 
-	selsnap(&sel.nb.x, &sel.nb.y, -1);
-	selsnap(&sel.ne.x, &sel.ne.y, +1);
+	//selsnap(&sel.nb.x, &sel.nb.y, -1);
+	//selsnap(&sel.ne.x, &sel.ne.y, +1);
 
 	/* expand selection over line breaks */
 	if (sel.type == SEL_RECTANGULAR)
 		return;
-	i = tlinelen(sel.nb.y);
-	if (i < sel.nb.x)
-		sel.nb.x = i;
-	if (tlinelen(sel.ne.y) <= sel.ne.x)
+	if (sel.nb.y >= 0) {
+		i = tlinelen(sel.nb.y);
+		if (i < sel.nb.x)
+			sel.nb.x = i;
+	}
+	if (sel.ne.y >= 0 && tlinelen(sel.ne.y) <= sel.ne.x)
 		sel.ne.x = term.col - 1;
 }
 
 int
-selected(int x, int y)
+selected(int x, int y, int view)
 {
+	unsigned int hi, hj;
+
 	if (sel.mode == SEL_EMPTY || sel.ob.x == -1 ||
 			sel.alt != IS_SET(MODE_ALTSCREEN))
 		return 0;
+
+	if (view)
+		mapview(&hi, &hj, &x, &y);
+
+	if (view && y < 0) {
+		if (sel.type == SEL_RECTANGULAR)
+			return BETWEEN(hi, sel.nb.hi, sel.ne.hi)
+			    && BETWEEN(x, sel.nb.x, sel.ne.x);
+
+		return BETWEEN(hi, sel.nb.hi, sel.ne.hi)
+		    && (hi != sel.nb.hi || hj >= sel.nb.hj)
+		    && (hi != sel.ne.hi || hj <= sel.ne.hj);
+	}
 
 	if (sel.type == SEL_RECTANGULAR)
 		return BETWEEN(y, sel.nb.y, sel.ne.y)
@@ -606,6 +670,8 @@ getsel(void)
 	char *str, *ptr;
 	int y, bufsize, lastx, linelen;
 	Glyph *gp, *last;
+
+	return NULL;
 
 	if (sel.ob.x == -1)
 		return NULL;
@@ -1096,7 +1162,7 @@ tscrolldown(int orig, int n)
 		term.line[i-n] = temp;
 	}
 
-	selscroll(orig, n);
+	selscroll(orig, n, 0);
 }
 
 void
@@ -1104,11 +1170,15 @@ tscrollup(int orig, int n, int hist)
 {
 	int i;
 	Line temp;
+	int tmpsel;
+	int hst = (hist && orig == 0 && n == 1);
 
 	LIMIT(n, 0, term.bot-orig+1);
 
-	if (hist && orig == 0 && n == 1) {
+	if (hst) {
 		hist_push();
+		tmpsel = sel.ob.x;
+		sel.ob.x = -1;
 	}
 
 	tclearregion(0, orig, term.col-1, orig+n-1);
@@ -1120,27 +1190,46 @@ tscrollup(int orig, int n, int hist)
 		term.line[i+n] = temp;
 	}
 
-	selscroll(orig, -n);
+	if (hst)
+		sel.ob.x = tmpsel;
+	selscroll(orig, -n, hst);
 }
 
 void
-selscroll(int orig, int n)
+selscroll(int orig, int n, int hist)
 {
+	int moveb, movee;
+
 	if (sel.ob.x == -1)
 		return;
 
-	if (BETWEEN(sel.nb.y, orig, term.bot) != BETWEEN(sel.ne.y, orig, term.bot)) {
+	moveb = BETWEEN(sel.nb.y, orig, term.bot) || (hist && sel.nb.y < 0);
+	movee = BETWEEN(sel.ne.y, orig, term.bot) || (hist && sel.ne.y < 0);
+
+	if (moveb != movee) {
 		selclear();
-	} else if (BETWEEN(sel.nb.y, orig, term.bot)) {
+	} else if (moveb) {
 		sel.ob.y += n;
 		sel.oe.y += n;
-		if (sel.ob.y < term.top || sel.ob.y > term.bot ||
-		    sel.oe.y < term.top || sel.oe.y > term.bot) {
+		if (!hist && (sel.ob.y < term.top || sel.ob.y > term.bot ||
+		    sel.oe.y < term.top || sel.oe.y > term.bot)) {
 			selclear();
 		} else {
 			selnormalize();
 		}
 	}
+}
+
+void
+sel_debug(const Arg *arg)
+{
+	printf("--- DEBUG ---\n");
+	printf("mode: %d type: %d snap: %d alt: %d\n",
+	       sel.mode, sel.type, sel.snap, sel.alt);
+	printf("ob: %d %d %d %d\n", sel.ob.x, sel.ob.y, sel.ob.hi, sel.ob.hj);
+	printf("oe: %d %d %d %d\n", sel.oe.x, sel.oe.y, sel.oe.hi, sel.oe.hj);
+	printf("nb: %d %d %d %d\n", sel.nb.x, sel.nb.y, sel.nb.hi, sel.nb.hj);
+	printf("ne: %d %d %d %d\n", sel.ne.x, sel.ne.y, sel.ne.hi, sel.ne.hj);
 }
 
 void
@@ -1201,6 +1290,18 @@ hist_push(void)
 	if (hist.len[hist.i] <= 0 && (hist.ci == hist.i || hist.ci == i)) {
 		hist.ci = (hist.ci + 1) % hist.size;
 		hist.cj = 0;
+	}
+
+	/* move selection */
+	if (sel.ob.hi == i || sel.oe.hi == i)
+		selclear();
+	if (sel.ob.x != -1 && sel.ob.y == 0) {
+		sel.ob.hi = hist.i;
+		sel.ob.hj = hist.len[hist.i] + MIN(sel.ob.x, len);
+	}
+	if (sel.ob.x != -1 && sel.oe.y == 0) {
+		sel.oe.hi = hist.i;
+		sel.oe.hj = hist.len[hist.i] + MIN(sel.oe.x, len);
 	}
 
 	/* push text */
@@ -1415,7 +1516,7 @@ tclearregion(int x1, int y1, int x2, int y2)
 		term.dirty[y] = 1;
 		for (x = x1; x <= x2; x++) {
 			gp = &term.line[y][x];
-			if (selected(x, y))
+			if (selected(x, y, 0))
 				selclear();
 			gp->fg = term.c.attr.fg;
 			gp->bg = term.c.attr.bg;
@@ -2575,7 +2676,7 @@ check_control_code:
 		 */
 		return;
 	}
-	if (selected(term.c.x, term.c.y))
+	if (selected(term.c.x, term.c.y, 0))
 		selclear();
 
 	gp = &term.line[term.c.y][term.c.x];
