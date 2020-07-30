@@ -107,7 +107,7 @@ void selclear(void);
 void selinit(void);
 void selstart(int, int, int);
 void selextend(int, int, int, int);
-int selected(int, int, int);
+int selectedv(int, int);
 char *getsel(void);
 
 size_t utf8encode(Rune, char *);

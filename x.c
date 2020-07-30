@@ -1493,7 +1493,7 @@ xdrawcursor(int cx, int cy, Glyph g, int ox, int oy, Glyph og)
 	Color drawcol;
 
 	/* remove the old cursor */
-	if (selected(ox, oy, 1))
+	if (selectedv(ox, oy))
 		og.mode ^= ATTR_REVERSE;
 	xdrawglyph(og, ox, oy);
 
@@ -1508,7 +1508,7 @@ xdrawcursor(int cx, int cy, Glyph g, int ox, int oy, Glyph og)
 	if (IS_SET(MODE_REVERSE)) {
 		g.mode |= ATTR_REVERSE;
 		g.bg = defaultfg;
-		if (selected(cx, cy, 1)) {
+		if (selectedv(cx, cy)) {
 			drawcol = dc.col[defaultcs];
 			g.fg = defaultrcs;
 		} else {
@@ -1516,7 +1516,7 @@ xdrawcursor(int cx, int cy, Glyph g, int ox, int oy, Glyph og)
 			g.fg = defaultcs;
 		}
 	} else {
-		if (selected(cx, cy, 1)) {
+		if (selectedv(cx, cy)) {
 			g.fg = defaultfg;
 			g.bg = defaultrcs;
 		} else {
@@ -1614,7 +1614,7 @@ xdrawline(Line line, int x1, int y1, int x2)
 		new = line[x];
 		if (new.mode == ATTR_WDUMMY)
 			continue;
-		if (selected(x, y1, 1))
+		if (selectedv(x, y1))
 			new.mode ^= ATTR_REVERSE;
 		if (i > 0 && ATTRCMP(base, new)) {
 			xdrawglyphfontspecs(specs, base, i, ox, y1);

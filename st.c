@@ -228,7 +228,7 @@ static char base64dec_getc(const char **);
 
 static ssize_t xwrite(int, const char *, size_t);
 
-static void mapview(unsigned int *, unsigned int *, int *, int *);
+static void view2hist(unsigned int *, unsigned int *, int *, int *);
 static void hist_push(void);
 static void hist_view(unsigned int *);
 
@@ -440,28 +440,26 @@ tlinelen(int y)
 }
 
 void
-mapview(unsigned int *hi, unsigned int *hj, int *x, int *y)
+view2hist(unsigned int *hi, unsigned int *hj, int *x, int *y)
 {
 	unsigned int ci = hist.ci, cj = hist.cj / term.col * term.col;
-	unsigned int i, j;
+	unsigned int i, l;
+	unsigned int len = *y * term.col + *x;
 
 	if (hist.size <= 0)
 		return;
 
 	for (i = 0; i < term.row && hist.len[ci] > 0; i++) {
-		for (j = 0; j < term.col; j++) {
-			if (i == *y && j == *x) {
-				*hi = ci;
-				*hj = MIN(cj, hist.len[ci]);
-				*y = -1;
-				return;
-			}
-			cj++;
+		l = DIVCEIL(hist.len[ci] - cj, term.col) * term.col;
+		if (len <= l) {
+			*hi = ci;
+			*hj = cj + len;
+			*y = -1;
+			return;
 		}
-		if (cj >= hist.len[ci]) {
-			ci = (ci + 1) % hist.size;
-			cj = 0;
-		}
+		len -= l;
+		ci++;
+		cj = 0;
 	}
 
 	*y -= i;
@@ -477,8 +475,8 @@ selstart(int col, int row, int snap)
 	sel.snap = snap;
 	sel.oe.x = sel.ob.x = col;
 	sel.oe.y = sel.ob.y = row;
-	mapview(&sel.ob.hi, &sel.ob.hj, &sel.ob.x, &sel.ob.y);
-	mapview(&sel.oe.hi, &sel.oe.hj, &sel.oe.x, &sel.oe.y);
+	view2hist(&sel.ob.hi, &sel.ob.hj, &sel.ob.x, &sel.ob.y);
+	view2hist(&sel.oe.hi, &sel.oe.hj, &sel.oe.x, &sel.oe.y);
 	selnormalize();
 
 	if (sel.snap != 0)
@@ -506,7 +504,7 @@ selextend(int col, int row, int type, int done)
 
 	sel.oe.x = col;
 	sel.oe.y = row;
-	mapview(&sel.oe.hi, &sel.oe.hj, &sel.oe.x, &sel.oe.y);
+	view2hist(&sel.oe.hi, &sel.oe.hj, &sel.oe.x, &sel.oe.y);
 	selnormalize();
 	sel.type = type;
 
@@ -561,18 +559,29 @@ selnormalize(void)
 }
 
 int
-selected(int x, int y, int view)
+selected(int x, int y)
 {
-	unsigned int hi, hj;
-
 	if (sel.mode == SEL_EMPTY || sel.ob.x == -1 ||
 			sel.alt != IS_SET(MODE_ALTSCREEN))
 		return 0;
 
-	if (view)
-		mapview(&hi, &hj, &x, &y);
+	if (sel.type == SEL_RECTANGULAR)
+		return BETWEEN(y, sel.nb.y, sel.ne.y)
+		    && BETWEEN(x, sel.nb.x, sel.ne.x);
 
-	if (view && y < 0) {
+	return BETWEEN(y, sel.nb.y, sel.ne.y)
+	    && (y != sel.nb.y || x >= sel.nb.x)
+	    && (y != sel.ne.y || x <= sel.ne.x);
+}
+
+int
+selectedv(int x, int y)
+{
+	unsigned int hi, hj;
+
+	view2hist(&hi, &hj, &x, &y);
+
+	if (y < 0) {
 		if (sel.type == SEL_RECTANGULAR)
 			return BETWEEN(hi, sel.nb.hi, sel.ne.hi)
 			    && BETWEEN(x, sel.nb.x, sel.ne.x);
@@ -582,13 +591,7 @@ selected(int x, int y, int view)
 		    && (hi != sel.ne.hi || hj <= sel.ne.hj);
 	}
 
-	if (sel.type == SEL_RECTANGULAR)
-		return BETWEEN(y, sel.nb.y, sel.ne.y)
-		    && BETWEEN(x, sel.nb.x, sel.ne.x);
-
-	return BETWEEN(y, sel.nb.y, sel.ne.y)
-	    && (y != sel.nb.y || x >= sel.nb.x)
-	    && (y != sel.ne.y || x <= sel.ne.x);
+       return selected(x, y);
 }
 
 void
@@ -1516,7 +1519,7 @@ tclearregion(int x1, int y1, int x2, int y2)
 		term.dirty[y] = 1;
 		for (x = x1; x <= x2; x++) {
 			gp = &term.line[y][x];
-			if (selected(x, y, 0))
+			if (selected(x, y))
 				selclear();
 			gp->fg = term.c.attr.fg;
 			gp->bg = term.c.attr.bg;
@@ -2676,7 +2679,7 @@ check_control_code:
 		 */
 		return;
 	}
-	if (selected(term.c.x, term.c.y, 0))
+	if (selected(term.c.x, term.c.y))
 		selclear();
 
 	gp = &term.line[term.c.y][term.c.x];
